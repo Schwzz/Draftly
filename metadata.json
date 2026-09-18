@@ -1,0 +1,6 @@
+{
+  "name": "MLBB Draft AI",
+  "description": "Smart draft assistant for Mobile Legends: Bang Bang that recommends the top counter-picks based on enemy lineup, player role, and team synergy.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

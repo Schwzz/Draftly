@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Outer Crest / Shield -->
+    <path
+        android:fillColor="#F59E0B"
+        android:pathData="M54,24 L78,34 C78,54 67.5,70.5 54,84 C40.5,70.5 30,54 30,34 Z" />
+    <path
+        android:fillColor="#1E293B"
+        android:pathData="M54,28 L74,36.5 C74,53 64.5,67.5 54,79 C43.5,67.5 34,53 34,36.5 Z" />
+    <!-- Tactical Chevron / Crown -->
+    <path
+        android:fillColor="#38BDF8"
+        android:pathData="M54,34 L66,42 L62,56 L54,50 L46,56 L42,42 Z" />
+    <path
+        android:fillColor="#FCD34D"
+        android:pathData="M54,52 L60,60 L54,72 L48,60 Z" />
+    <!-- Central AI / Draft Core -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,42 L58,48 L54,54 L50,48 Z" />
+</vector>
