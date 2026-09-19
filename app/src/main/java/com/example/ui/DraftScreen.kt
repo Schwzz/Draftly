@@ -1,5 +1,10 @@
 package com.example.ui
 
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -23,10 +28,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.LayersClear
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -41,8 +51,10 @@ import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -51,12 +63,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.model.Hero
+import com.example.model.PickerSlot
 import com.example.model.Recommendation
 import com.example.model.Role
+import com.example.overlay.OverlayService
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -66,6 +84,38 @@ fun DraftScreen(
 ) {
   val uiState by viewModel.uiState.collectAsState()
   val draft = uiState.draftState
+
+  val context = LocalContext.current
+  val lifecycleOwner = LocalLifecycleOwner.current
+
+  var showPermissionDialog by remember { mutableStateOf(false) }
+  var waitingForPermissionReturn by remember { mutableStateOf(false) }
+
+  val overlaySettingsLauncher = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.StartActivityForResult()
+  ) {
+    if (Settings.canDrawOverlays(context)) {
+      OverlayService.start(context)
+    }
+  }
+
+  // Re-check permission when returning to Draftly from system settings
+  DisposableEffect(lifecycleOwner) {
+    val observer = LifecycleEventObserver { _, event ->
+      if (event == Lifecycle.Event.ON_RESUME) {
+        if (waitingForPermissionReturn) {
+          waitingForPermissionReturn = false
+          if (Settings.canDrawOverlays(context)) {
+            OverlayService.start(context)
+          }
+        }
+      }
+    }
+    lifecycleOwner.lifecycle.addObserver(observer)
+    onDispose {
+      lifecycleOwner.lifecycle.removeObserver(observer)
+    }
+  }
 
   Scaffold(
     topBar = {
@@ -88,6 +138,26 @@ fun DraftScreen(
         },
         actions = {
           IconButton(
+            onClick = {
+              if (uiState.isOverlayActive) {
+                OverlayService.stop(context)
+              } else {
+                if (Settings.canDrawOverlays(context)) {
+                  OverlayService.start(context)
+                } else {
+                  showPermissionDialog = true
+                }
+              }
+            },
+            modifier = Modifier.testTag("top_app_bar_overlay_button")
+          ) {
+            Icon(
+              imageVector = if (uiState.isOverlayActive) Icons.Default.Layers else Icons.Default.LayersClear,
+              contentDescription = if (uiState.isOverlayActive) "Stop Overlay" else "Start Overlay",
+              tint = if (uiState.isOverlayActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+          }
+          IconButton(
             onClick = { viewModel.resetDraft() },
             modifier = Modifier.testTag("reset_draft_button")
           ) {
@@ -108,6 +178,81 @@ fun DraftScreen(
         .padding(horizontal = 16.dp),
       verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+      // 0. OVERLAY MODE CONTROL BANNER
+      item {
+        Card(
+          modifier = Modifier
+            .fillMaxWidth()
+            .testTag("overlay_mode_card"),
+          colors = CardDefaults.cardColors(
+            containerColor = if (uiState.isOverlayActive) {
+              MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+            } else {
+              MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            }
+          ),
+          shape = RoundedCornerShape(12.dp)
+        ) {
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              modifier = Modifier.weight(1f)
+            ) {
+              Icon(
+                imageVector = if (uiState.isOverlayActive) Icons.Default.Layers else Icons.Default.LayersClear,
+                contentDescription = null,
+                tint = if (uiState.isOverlayActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(24.dp)
+              )
+              Spacer(modifier = Modifier.width(12.dp))
+              Column {
+                Text(
+                  text = "Overlay Mode (V0.2)",
+                  style = MaterialTheme.typography.titleSmall,
+                  fontWeight = FontWeight.Bold
+                )
+                Text(
+                  text = if (uiState.isOverlayActive) {
+                    "Overlay is active above other apps"
+                  } else {
+                    "Show floating recommendations over MLBB"
+                  },
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+              }
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(
+              onClick = {
+                if (uiState.isOverlayActive) {
+                  OverlayService.stop(context)
+                } else {
+                  if (Settings.canDrawOverlays(context)) {
+                    OverlayService.start(context)
+                  } else {
+                    showPermissionDialog = true
+                  }
+                }
+              },
+              colors = if (uiState.isOverlayActive) {
+                ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+              } else {
+                ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+              },
+              modifier = Modifier.testTag("overlay_mode_toggle_button")
+            ) {
+              Text(if (uiState.isOverlayActive) "Stop" else "Activate")
+            }
+          }
+        }
+      }
       // 1. ROLE SELECTION
       item {
         SectionHeader(title = "YOUR ROLE")
@@ -252,6 +397,51 @@ fun DraftScreen(
         },
         onDismiss = {
           viewModel.closePicker()
+        }
+      )
+    }
+
+    // Overlay Permission Explanation Dialog
+    if (showPermissionDialog) {
+      AlertDialog(
+        onDismissRequest = { showPermissionDialog = false },
+        title = {
+          Text(
+            text = "Enable Overlay Mode",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold
+          )
+        },
+        text = {
+          Text(
+            text = "Draftly needs the 'Display over other apps' permission to show a small floating button and live draft recommendations while you play Mobile Legends: Bang Bang.\n\n" +
+              "Note: This permission only allows displaying the floating window. Draftly does NOT capture your screen or read gameplay data in this version.",
+            style = MaterialTheme.typography.bodyMedium
+          )
+        },
+        confirmButton = {
+          Button(
+            onClick = {
+              showPermissionDialog = false
+              waitingForPermissionReturn = true
+              val intent = Intent(
+                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:${context.packageName}")
+              )
+              overlaySettingsLauncher.launch(intent)
+            },
+            modifier = Modifier.testTag("grant_overlay_permission_button")
+          ) {
+            Text("Open Settings")
+          }
+        },
+        dismissButton = {
+          TextButton(
+            onClick = { showPermissionDialog = false },
+            modifier = Modifier.testTag("cancel_overlay_permission_button")
+          ) {
+            Text("Cancel")
+          }
         }
       )
     }
